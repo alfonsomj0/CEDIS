@@ -407,7 +407,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--t1);heigh
       </div>
     </div>
     <div class="card" draggable="true" style="flex:1;">
-      <div class="ctitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Implementados vs. Volumetría</div>
+      <div class="ctitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Entregas en sitio vs. Implementados</div>
       <div style="display:flex;gap:12px;height:170px;align-items:center;">
         <div style="width:140px;height:140px;flex-shrink:0;"><canvas id="chAnillo2"></canvas></div>
         <div id="legAnillo2" style="flex:1;"></div>
@@ -598,7 +598,7 @@ function processRows(rows){
     const r=rows[i].map(c=>String(c||'').toUpperCase()).join('|');
     if(r.includes('PROYECTO')&&(r.includes('FALLO')||r.includes('PERFIL'))){hi=i;break;}
   }
-  if(hi<0)throw new Error('No se encontró encabezado. El Excel debe tener columnas: Proyecto, Fallo, Vigencia, Perfil, Cantidad Minima, Entregas Sitio, Implementados.');
+  if(hi<0)throw new Error('No se encontró encabezado en la hoja "Bitacora Puesto a Punto". Verifica que el archivo sea el correcto.');
 
   const H=rows[hi].map(h=>String(h||'').trim().toUpperCase());
   const ci=n=>H.findIndex(h=>h.includes(n));
@@ -618,12 +618,14 @@ function processRows(rows){
     cantMax:  H.findIndex(h=>h.includes('CANTIDAD')&&(h.includes('MAX')||h.includes('MÁX'))),
     entSitio: H.findIndex(h=>h.includes('ENTREGAS SITIO')||h.includes('ENTREGA')&&h.includes('SN')),
     porEntr:  H.findIndex(h=>h.includes('POR ENTREGAR')),
+    enRuta:   H.findIndex(h=>h.includes('EN RUTA')||h.includes('RUTA')),
     impl:     H.findIndex(h=>(h.includes('IMPLEMENTADOS')||h.includes('IMPLEMENTADO'))&&h.includes('SN')&&!h.includes('POR')),
     porImpl:  H.findIndex(h=>h.includes('POR IMPLEMENT')),
   };
   // Fallbacks
   if(C.entSitio<0) C.entSitio=H.findIndex(h=>h.includes('ENTREGA'));
   if(C.impl<0)     C.impl=H.findIndex(h=>h.includes('IMPLEMENT')&&!h.includes('POR'));
+  if(C.enRuta<0)   C.enRuta=-1; // opcional
 
   const getN=(row,col)=>col>=0&&row[col]!=null?parseFloat(row[col])||0:0;
   const getS=(row,col)=>col>=0&&row[col]!=null?String(row[col]).trim():'';
@@ -666,6 +668,7 @@ function processRows(rows){
         cantMin:getN(row,C.cantMin),
         cantMax:getN(row,C.cantMax),
         entSitio:getN(row,C.entSitio),
+        enRuta:getN(row,C.enRuta),
         porEntr:getN(row,C.porEntr),
         impl:getN(row,C.impl),
         porImpl:getN(row,C.porImpl),
@@ -673,7 +676,7 @@ function processRows(rows){
       cur.perfiles.push(pf);
       cur.volSol+=pf.volSol;cur.cantMin+=pf.cantMin;cur.cantMax+=pf.cantMax;
       cur.entSitio+=pf.entSitio;cur.porEntr+=pf.porEntr;
-      cur.impl+=pf.impl;cur.porImpl+=pf.porImpl;cur.recCedis+=pf.recCedis;
+      cur.impl+=pf.impl;cur.porImpl+=pf.porImpl;cur.recCedis+=pf.recCedis;cur.enRuta=(cur.enRuta||0)+pf.enRuta;
     }
   }
   if(cur)projects.push(cur);
@@ -741,7 +744,9 @@ function readFile(file){
           }
         }catch(metaErr){ /* continuar sin metadata */ }
 
-        const ws=wb.Sheets[wb.SheetNames[0]];
+        // Buscar la hoja correcta: 'Bitacora Puesto a Punto' o la primera disponible
+        const sheetName = wb.SheetNames.find(n=>n.includes('Bitacora')||n.includes('Bitácora')||n.includes('BITACORA')) || wb.SheetNames[0];
+        const ws=wb.Sheets[sheetName];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
         allProjects=processRows(rows);
         if(!allProjects.length)throw new Error('No se encontraron proyectos. Verifica columnas: Proyecto, Fallo, Vigencia, Perfil, Cantidad Minima, Entregas Sitio, Implementados.');
@@ -971,7 +976,7 @@ function buildKPIs(data){
   const totalMin=data.reduce((s,p)=>s+p.cantMin,0);
   const totalSitio=data.reduce((s,p)=>s+p.entSitio,0);
   const totalImpl=data.reduce((s,p)=>s+p.impl,0);
-  const totalPorImpl=data.reduce((s,p)=>s+p.porImpl,0);
+  const totalPorImpl=Math.max(0, totalSitio - totalImpl);
   const maxRet=data.reduce((mx,p)=>Math.max(mx,diasRetraso(p)),0);
   setText('kProy',data.length);
   setText('kMin',fmt(totalMin));
@@ -988,10 +993,10 @@ function buildAnillos(data){
   const totalMin=data.reduce((s,p)=>s+p.cantMin,0)||1;
   const totalSitio=data.reduce((s,p)=>s+p.entSitio,0);
   const totalImpl=data.reduce((s,p)=>s+p.impl,0);
-  function makeAnillo(id,val,total,legId,label){
+  function makeAnillo(id,val,total,legId,label,totalLbl){
     const col=stColor(val,total);const pc=pct(val,total);
     kill(id);
-    const filtroMap={'chAnillo1':'ent_sitio','chAnillo2':'impl'};
+    const filtroMap={'chAnillo1':'ent_sitio','chAnillo2':'impl'}; // chAnillo2 filtra por implementados
     const filtro=filtroMap[id]||'';
     const canvasEl=document.getElementById(id);
     if(canvasEl)canvasEl.style.cursor='pointer';
@@ -1013,34 +1018,34 @@ function buildAnillos(data){
     document.getElementById(legId).innerHTML=`
       <div style="text-align:center;">
         <div style="font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace;color:${col};">${pc}%</div>
-        <div style="font-size:9px;color:var(--t2);margin-top:1px;">de ${fmt(total)} volumetría</div>
+        <div style="font-size:9px;color:var(--t2);margin-top:1px;">de ${fmt(total)} ${totalLbl||'volumetría'}</div>
       </div>
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">
         <div style="display:flex;justify-content:space-between;font-size:9px;gap:8px;"><span style="color:var(--t2);">${label}</span><span style="font-weight:700;color:${col};">${fmt(val)}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:9px;gap:8px;"><span style="color:var(--t2);">Pendiente</span><span style="font-weight:700;color:#ef4444;">${fmt(total-val)}</span></div>
       </div>`;
   }
-  makeAnillo('chAnillo1',totalSitio,totalMin,'legAnillo1','En sitio');
-  makeAnillo('chAnillo2',totalImpl,totalMin,'legAnillo2','Implementados');
+  makeAnillo('chAnillo1',totalSitio,totalMin,'legAnillo1','En sitio','volumetría');
+  makeAnillo('chAnillo2',totalImpl,totalSitio,'legAnillo2','Implementados','entregas sitio');
 }
 
 /* ══ EMBUDO ══ */
 function buildFunnel(data){
   const cantMin=  data.reduce((s,p)=>s+p.cantMin,0);
+  const volSol=   data.reduce((s,p)=>s+p.volSol,0);
   const entSitio= data.reduce((s,p)=>s+p.entSitio,0);
-  const porEntr=  data.reduce((s,p)=>s+p.porEntr,0);
+  const porEntr=  Math.max(0, volSol - entSitio);
   const impl=     data.reduce((s,p)=>s+p.impl,0);
-  const porImpl=  data.reduce((s,p)=>s+p.porImpl,0);
-  const enProceso= entSitio+porEntr+impl+porImpl;
+  const porImpl=  Math.max(0, entSitio - impl);
+  const enProceso= entSitio+porEntr+impl;
   const pendiente= Math.max(0, cantMin - enProceso);
 
   const steps=[
-    {lbl:'Volumetría requerida',  val:cantMin,   col:'#6366f1', pct:100,                    filtro:''},
-    {lbl:'Entregas en sitio',     val:entSitio,  col:'#38bdf8', pct:pct(entSitio,cantMin),  filtro:'ent_sitio'},
-    {lbl:'Por entregar al usuario',val:porEntr,  col:'#f59e0b', pct:pct(porEntr,cantMin),   filtro:'por_entr'},
-    {lbl:'Implementados',         val:impl,      col:'#10b981', pct:pct(impl,cantMin),       filtro:'impl'},
-    {lbl:'Por implementar',       val:porImpl,   col:'#ef4444', pct:pct(porImpl,cantMin),    filtro:'por_impl'},
-    {lbl:'Pendiente de proceso',  val:pendiente, col:'#475569', pct:pct(pendiente,cantMin),  filtro:''},
+    {lbl:'Volumetría requerida',  val:cantMin,   col:'#6366f1', pct:100,                         filtro:''},
+    {lbl:'Entregas en sitio',     val:entSitio,  col:'#38bdf8', pct:pct(entSitio,cantMin),       filtro:'ent_sitio'},
+    {lbl:'Por entregar en sitio',  val:porEntr,  col:'#f59e0b', pct:pct(porEntr,volSol),         filtro:'por_entr'},
+    {lbl:'Implementados',         val:impl,      col:'#10b981', pct:pct(impl,entSitio),           filtro:'impl'},
+    {lbl:'Por implementar',       val:porImpl,   col:'#ef4444', pct:pct(porImpl,entSitio),        filtro:'por_impl'},
   ];
 
   document.getElementById('funnelWrap').innerHTML=steps.map(s=>`
@@ -1979,6 +1984,41 @@ async function exportPDF(){
   }catch(err){alert('Error al exportar PDF: '+err.message);}
   if(prevTheme!=='light'){theme=prevTheme;document.documentElement.setAttribute('data-theme','');buildAll();}
   btn.innerHTML=orig;btn.disabled=false;
+}
+
+/* ══ CARGA DESDE SHAREPOINT ══ */
+const SP_URL = "https://mainbit-my.sharepoint.com/:x:/g/personal/rhorta_mainbit_com_mx/IQAHkfJc-UqBR6AgXO31XRjOAVXqRj6T8I8ngse7kHhb_xk?download=1";
+
+async function cargarDesdeSharePoint(e) {
+  if(e) e.preventDefault();
+  const btn=document.getElementById('dzSpBtn');
+  const fname=document.getElementById('dzFname');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Conectando...';}
+  if(fname)fname.textContent='';
+  try {
+    const response = await fetch(SP_URL,{method:'GET',mode:'cors',credentials:'include'});
+    if(!response.ok) throw new Error('Error '+response.status+': '+response.statusText);
+    const ct=response.headers.get('content-type')||'';
+    if(ct.includes('text/html')||ct.includes('login'))
+      throw new Error('Requiere autenticación de Microsoft.');
+    const blob=await response.blob();
+    if(blob.size<1000) throw new Error('Archivo vacío o requiere autenticación.');
+    const file=new File([blob],'Proyectos_CEDIS.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    if(fname)fname.textContent='✅ Descargado desde SharePoint';
+    processFile(file);
+  } catch(err) {
+    console.error('SharePoint:',err);
+    const esAcceso=err.message.includes('autenticación')||err.message.includes('fetch')||err.message.includes('CORS');
+    alert(esAcceso
+      ? '⚠️ El archivo requiere autenticación de Microsoft.\nUsa "Seleccionar archivo Excel" para cargarlo manualmente.'
+      : '⚠️ '+err.message);
+    if(fname)fname.textContent='';
+  } finally {
+    if(btn){
+      btn.disabled=false;
+      btn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Cargar desde SharePoint';
+    }
+  }
 }
 
 /* ══ DRAG DROP UPLOAD ══ */
