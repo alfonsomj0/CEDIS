@@ -976,7 +976,7 @@ function buildKPIs(data){
   const totalMin=data.reduce((s,p)=>s+p.cantMin,0);
   const totalSitio=data.reduce((s,p)=>s+p.entSitio,0);
   const totalImpl=data.reduce((s,p)=>s+p.impl,0);
-  const totalPorImpl=data.reduce((s,p)=>s+p.porImpl,0);
+  const totalPorImpl=Math.max(0, totalSitio - totalImpl);
   const maxRet=data.reduce((mx,p)=>Math.max(mx,diasRetraso(p)),0);
   setText('kProy',data.length);
   setText('kMin',fmt(totalMin));
@@ -1032,20 +1032,20 @@ function buildAnillos(data){
 /* ══ EMBUDO ══ */
 function buildFunnel(data){
   const cantMin=  data.reduce((s,p)=>s+p.cantMin,0);
+  const volSol=   data.reduce((s,p)=>s+p.volSol,0);
   const entSitio= data.reduce((s,p)=>s+p.entSitio,0);
-  const porEntr=  data.reduce((s,p)=>s+p.porEntr,0);
+  const porEntr=  Math.max(0, volSol - entSitio);
   const impl=     data.reduce((s,p)=>s+p.impl,0);
-  const porImpl=  data.reduce((s,p)=>s+p.porImpl,0);
-  const enProceso= entSitio+porEntr+impl+porImpl;
+  const porImpl=  Math.max(0, entSitio - impl);
+  const enProceso= entSitio+porEntr+impl;
   const pendiente= Math.max(0, cantMin - enProceso);
 
   const steps=[
-    {lbl:'Volumetría requerida',  val:cantMin,   col:'#6366f1', pct:100,                    filtro:''},
-    {lbl:'Entregas en sitio',     val:entSitio,  col:'#38bdf8', pct:pct(entSitio,cantMin),  filtro:'ent_sitio'},
-    {lbl:'Por entregar al usuario',val:porEntr,  col:'#f59e0b', pct:pct(porEntr,cantMin),   filtro:'por_entr'},
-    {lbl:'Implementados',         val:impl,      col:'#10b981', pct:pct(impl,cantMin),       filtro:'impl'},
-    {lbl:'Por implementar',       val:porImpl,   col:'#ef4444', pct:pct(porImpl,cantMin),    filtro:'por_impl'},
-    {lbl:'Pendiente de proceso',  val:pendiente, col:'#475569', pct:pct(pendiente,cantMin),  filtro:''},
+    {lbl:'Volumetría requerida',  val:cantMin,   col:'#6366f1', pct:100,                         filtro:''},
+    {lbl:'Entregas en sitio',     val:entSitio,  col:'#38bdf8', pct:pct(entSitio,cantMin),       filtro:'ent_sitio'},
+    {lbl:'Por entregar en sitio',  val:porEntr,  col:'#f59e0b', pct:pct(porEntr,volSol),         filtro:'por_entr'},
+    {lbl:'Implementados',         val:impl,      col:'#10b981', pct:pct(impl,entSitio),           filtro:'impl'},
+    {lbl:'Por implementar',       val:porImpl,   col:'#ef4444', pct:pct(porImpl,entSitio),        filtro:'por_impl'},
   ];
 
   document.getElementById('funnelWrap').innerHTML=steps.map(s=>`
